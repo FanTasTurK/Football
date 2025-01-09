@@ -37,7 +37,6 @@ apt-get update && apt-get upgrade -y
 log "Gerekli paketler kuruluyor..."
 apt-get install -y python3-pip \
     firefox-esr \
-    geckodriver \
     xvfb \
     python3-dev \
     libatlas-base-dev \
@@ -52,7 +51,46 @@ apt-get install -y python3-pip \
     libxt6 \
     libxinerama1 \
     git \
-    python3-venv
+    python3-venv \
+    wget \
+    tar
+
+# Geckodriver kurulumu
+log "Geckodriver kuruluyor..."
+GECKO_VERSION="v0.33.0"
+ARCH=$(uname -m)
+if [ "$ARCH" = "aarch64" ]; then
+    GECKO_URL="https://github.com/mozilla/geckodriver/releases/download/${GECKO_VERSION}/geckodriver-${GECKO_VERSION}-linux-aarch64.tar.gz"
+elif [ "$ARCH" = "armv7l" ]; then
+    GECKO_URL="https://github.com/mozilla/geckodriver/releases/download/${GECKO_VERSION}/geckodriver-${GECKO_VERSION}-linux-armv7l.tar.gz"
+else
+    GECKO_URL="https://github.com/mozilla/geckodriver/releases/download/${GECKO_VERSION}/geckodriver-${GECKO_VERSION}-linux64.tar.gz"
+fi
+
+wget -q $GECKO_URL -O /tmp/geckodriver.tar.gz
+tar -xzf /tmp/geckodriver.tar.gz -C /tmp
+chmod +x /tmp/geckodriver
+mv /tmp/geckodriver /usr/local/bin/
+rm /tmp/geckodriver.tar.gz
+
+# Firefox ESR sürümünü kontrol et ve yeniden kur
+log "Firefox ESR yeniden kuruluyor..."
+apt-get remove -y firefox-esr
+apt-get install -y firefox-esr
+
+# Firefox ve Geckodriver sürümlerini kontrol et
+log "Firefox ve Geckodriver sürümleri kontrol ediliyor..."
+firefox_version=$(firefox-esr --version || echo "Firefox kurulu değil")
+geckodriver_version=$(geckodriver --version || echo "Geckodriver kurulu değil")
+log "Firefox sürümü: $firefox_version"
+log "Geckodriver sürümü: $geckodriver_version"
+
+# Gerekli dizinleri oluştur ve izinleri ayarla
+log "Firefox ve Geckodriver için gerekli dizinler oluşturuluyor..."
+mkdir -p /var/lib/firefox-esr
+mkdir -p /var/lib/geckodriver
+chown -R ${CURRENT_USER}:${CURRENT_USER} /var/lib/firefox-esr
+chown -R ${CURRENT_USER}:${CURRENT_USER} /var/lib/geckodriver
 
 # Swap alanı oluşturma
 log "Swap alanı kontrol ediliyor ve oluşturuluyor..."
@@ -132,6 +170,8 @@ Type=simple
 User=${CURRENT_USER}
 Environment=DISPLAY=:99
 Environment=PYTHONUNBUFFERED=1
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=MOZ_HEADLESS=1
 WorkingDirectory=${WORK_DIR}
 ExecStart=${WORK_DIR}/venv/bin/python3 ${WORK_DIR}/scraper.py
 Restart=always
