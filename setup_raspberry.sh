@@ -26,7 +26,7 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 # Çalışma dizinini belirle
-WORK_DIR="/home/pi/Football"
+WORK_DIR="/home/server/Football"
 CURRENT_USER="server"
 
 # Sistem güncellemesi
@@ -51,7 +51,8 @@ apt-get install -y python3-pip \
     libxtst6 \
     libxt6 \
     libxinerama1 \
-    git
+    git \
+    python3-venv
 
 # Swap alanı oluşturma
 log "Swap alanı kontrol ediliyor ve oluşturuluyor..."
@@ -90,7 +91,36 @@ ExecStart=/usr/bin/Xvfb :99 -screen 0 1920x1080x24 -ac
 WantedBy=multi-user.target
 EOL
 
-# Football scraper service dosyası oluştur
+# Çalışma dizinini oluştur ve izinleri ayarla
+log "Çalışma dizini oluşturuluyor..."
+mkdir -p ${WORK_DIR}
+chown -R ${CURRENT_USER}:${CURRENT_USER} ${WORK_DIR}
+
+# Python sanal ortam oluştur ve paketleri kur
+log "Python sanal ortam oluşturuluyor..."
+sudo -u ${CURRENT_USER} bash << EOF
+python3 -m venv ${WORK_DIR}/venv
+source ${WORK_DIR}/venv/bin/activate
+python3 -m pip install --upgrade pip
+if [ -f ${WORK_DIR}/requirements.txt ]; then
+    python3 -m pip install -r ${WORK_DIR}/requirements.txt
+    if [ $? -ne 0 ]; then
+        echo "Python paketleri kurulurken hata oluştu!"
+        exit 1
+    fi
+else
+    echo "requirements.txt dosyası bulunamadı!"
+    exit 1
+fi
+deactivate
+EOF
+
+if [ $? -ne 0 ]; then
+    error "Python paketleri kurulurken hata oluştu!"
+    exit 1
+fi
+
+# Football scraper service dosyası oluştur (venv ile)
 log "Football scraper service dosyası oluşturuluyor..."
 cat > /etc/systemd/system/football-scraper.service << EOL
 [Unit]
@@ -103,28 +133,13 @@ User=${CURRENT_USER}
 Environment=DISPLAY=:99
 Environment=PYTHONUNBUFFERED=1
 WorkingDirectory=${WORK_DIR}
-ExecStart=/usr/bin/python3 ${WORK_DIR}/scraper.py
+ExecStart=${WORK_DIR}/venv/bin/python3 ${WORK_DIR}/scraper.py
 Restart=always
 RestartSec=3
 
 [Install]
 WantedBy=multi-user.target
 EOL
-
-# Çalışma dizinini oluştur ve izinleri ayarla
-log "Çalışma dizini oluşturuluyor..."
-mkdir -p ${WORK_DIR}
-chown -R ${CURRENT_USER}:${CURRENT_USER} ${WORK_DIR}
-
-# Python paketlerini kur
-log "Python paketleri kuruluyor..."
-sudo -u ${CURRENT_USER} python3 -m pip install --upgrade pip
-if [ -f ${WORK_DIR}/requirements.txt ]; then
-    sudo -u ${CURRENT_USER} python3 -m pip install -r ${WORK_DIR}/requirements.txt
-else
-    error "requirements.txt dosyası bulunamadı!"
-    exit 1
-fi
 
 # Servisleri etkinleştir ve başlat
 log "Servisler etkinleştiriliyor..."
